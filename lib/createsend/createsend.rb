@@ -78,6 +78,7 @@ module CreateSend
       body << "&redirect_uri=#{CGI.escape(redirect_uri.to_s)}"
       body << "&code=#{CGI.escape(code.to_s)}"
       options = {:body => body}
+      options = add_proxy_details_to_options(options)
       response = HTTParty.post(@@oauth_token_uri, options)
       if response.has_key? 'error' and response.has_key? 'error_description'
         err = "Error exchanging code for access token: "
@@ -93,6 +94,7 @@ module CreateSend
     def self.refresh_access_token(refresh_token)
       options = {
         :body => "grant_type=refresh_token&refresh_token=#{CGI.escape(refresh_token)}" }
+      options = add_proxy_details_to_options(options)
       response = HTTParty.post(@@oauth_token_uri, options)
       if response.has_key? 'error' and response.has_key? 'error_description'
         err = "Error refreshing access token: "
@@ -216,28 +218,34 @@ module CreateSend
     end
 
     def get(*args)
-      args = add_auth_details_to_options(args)
+      args = preprocess_options(args)
       handle_response CreateSend.get(*args)
     end
     alias_method :cs_get, :get
 
     def post(*args)
-      args = add_auth_details_to_options(args)
+      args = preprocess_options(args)
       handle_response CreateSend.post(*args)
     end
     alias_method :cs_post, :post
 
     def put(*args)
-      args = add_auth_details_to_options(args)
+      args = preprocess_options(args)
       handle_response CreateSend.put(*args)
     end
     alias_method :cs_put, :put
 
     def delete(*args)
-      args = add_auth_details_to_options(args)
+      args = preprocess_options(args)
       handle_response CreateSend.delete(*args)
     end
     alias_method :cs_delete, :delete
+
+    def preprocess_options(args)
+      args = add_auth_details_to_options(args)
+      args = add_proxy_details_to_options(args)
+      args
+    end
 
     def add_auth_details_to_options(args)
       if @auth_details
@@ -254,9 +262,27 @@ module CreateSend
               :username => @auth_details[:api_key], :password => 'x' }
           end
         end
-        args[1] = options
+        args[1] ||= {}
+        args[1].merge!(options)
       end
       args
+    end
+
+    def add_proxy_details_to_options(args)
+      options = self.class.add_proxy_details_to_options({})
+      args[1] ||= {}
+      args[1].merge!(options)
+      args
+    end
+
+    def self.add_proxy_details_to_options(options)
+      { 'HTTP_PROXY_HOST' => :http_proxyaddr,
+        'HTTP_PROXY_PORT' => :http_proxyport,
+        'HTTP_PROXY_USER' => :http_proxyuser,
+        'HTTP_PROXY_PASS' => :http_proxypass }.map do |env, option|
+        options[option] = ENV[env] unless ENV[env].nil?
+      end
+      options
     end
 
     def handle_response(response) # :nodoc:
